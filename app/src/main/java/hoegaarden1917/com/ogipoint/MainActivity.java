@@ -5,14 +5,17 @@ import android.app.PendingIntent;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.nfc.FormatException;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.nfc.tech.Ndef;
 import android.nfc.tech.NdefFormatable;
+import android.os.Parcelable;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
@@ -29,14 +32,19 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        mNfcAdapter = NfcAdapter.getDefaultAdapter(MainActivity.this);
+        mNfcPendingIntent = PendingIntent.getActivity(MainActivity.this, 0,
+                new Intent(MainActivity.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
+
         ((Button) findViewById(R.id.butun_write)).setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View v) {
+/*
                 mNfcAdapter = NfcAdapter.getDefaultAdapter(MainActivity.this);
                 mNfcPendingIntent = PendingIntent.getActivity(MainActivity.this, 0,
                         new Intent(MainActivity.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
-
+*/
                 enableTagWriteMode();
 
                 new AlertDialog.Builder(MainActivity.this).setTitle("Touch tag to write")
@@ -49,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
                         }).create().show();
             }
         });
+        handleIntent(getIntent());
     }
 
     private void enableTagWriteMode() {
@@ -64,7 +73,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onNewIntent(Intent intent) {
+    public void onResume(){
+        super.onResume();
+        enableTagWriteMode();
+    }
+
+    @Override
+    public void onPause(){
+        super.onPause();
+        disableTagWriteMode();
+    }
+
+    private void handleIntent(Intent intent) {
+
+
+        Log.d("NewIntent","N") ;
         // Tag writing mode
         if (mWriteMode && NfcAdapter.ACTION_TAG_DISCOVERED.equals(intent.getAction())) {
             Tag detectedTag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
@@ -75,7 +98,65 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Success: Wrote placeid to nfc tag", Toast.LENGTH_LONG)
                         .show();
             }
+        } else {
+            NdefMessage[] msgs = getNdefMessagesFromIntent(intent);
+
         }
+    }
+
+    NdefMessage[] getNdefMessagesFromIntent(Intent intent)
+    {
+        // Parse the intent
+        NdefMessage[] msgs = null;
+        String action = intent.getAction();
+        if (action.equals(NfcAdapter.ACTION_TAG_DISCOVERED) || action.equals(NfcAdapter.ACTION_NDEF_DISCOVERED))
+        {
+            Parcelable[] rawMsgs = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
+            if (rawMsgs != null)
+            {
+                msgs = new NdefMessage[rawMsgs.length];
+                for (int i = 0; i < rawMsgs.length; i++)
+                {
+                    msgs[i] = (NdefMessage) rawMsgs[i];
+                }
+
+            }
+            else
+            {
+                // Unknown tag type
+                byte[] empty = new byte[]{};
+                NdefRecord record = new NdefRecord(NdefRecord.TNF_UNKNOWN, empty, empty, empty);
+                NdefMessage msg = new NdefMessage(new NdefRecord[]{record});
+                msgs = new NdefMessage[]{msg};
+            }
+
+        }
+        else
+        {
+            Log.e("TAG", "Unknown intent.");
+            finish();
+        }
+        return msgs;
+    }
+
+    private void readFromNFC(Ndef ndef) {
+
+        try {
+            ndef.connect();
+            NdefMessage ndefMessage = ndef.getNdefMessage();
+            String message = new String(ndefMessage.getRecords()[0].getPayload());
+            Log.d("AAA", "readFromNFC: "+message);
+            ndef.close();
+
+        } catch (IOException | FormatException e) {
+            e.printStackTrace();
+
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        handleIntent(intent) ;
     }
 
     /*
